@@ -81,4 +81,4 @@ Makefile
 - **More variance reduction:** use the discounted underlying as a control variate, or quasi-random (Sobol) draws.
 - **Parallel Monte Carlo:** independent RNG streams per thread.
 
-Reference: Hull, J. C. *Options, Futures, and Other Derivatives.*# options-pricing-engine
+Reference: Hull, J. C. *Options, Futures, and Other Derivatives.*
