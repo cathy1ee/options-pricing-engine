@@ -1,5 +1,7 @@
 # Options Pricing Engine (C++)
 
+![tests](https://github.com/cathy1ee/options-pricing-engine/actions/workflows/test.yml/badge.svg)
+
 Prices European options three ways and checks each one against the others: closed-form Black-Scholes, analytic Greeks, and Monte Carlo simulation with antithetic variance reduction. It has no dependencies beyond the C++17 standard library.
 
 ## Features
