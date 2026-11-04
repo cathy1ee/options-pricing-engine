@@ -338,6 +338,54 @@ int main() {
         check(throws_invalid_argument([&] { mc_price_control_variate(bad, 1000, 42); }), "bad cv", bad, 0, 0);
     }
 
+    // 17) Sobol agrees with Black-Scholes. The bound is 5 standard errors rather than 4 because the
+    //     standard error comes from only 32 replications, which gives it heavier tails.
+    for (const Option& o : grid) {
+        const MCResult sobol = mc_price_sobol(o, 1 << 16, 42);
+        const double bs = bs_price(o);
+        check(std::fabs(sobol.price - bs) < 5 * sobol.std_error + 1e-6, "sobol vs bs", o, sobol.price, bs);
+    }
+
+    // 18) Sobol standard error: honest, smaller than plain, faster than 1/sqrt(N), and reproducible.
+    for (const Option& o : {Option{100, 100, 0.05, 0.20, 1, true}, Option{100, 90, 0.05, 0.25, 0.5, false},
+                            Option{100, 80, 0.0, 0.50, 2, true}}) {
+        const int n_seeds = 100;
+        double sum = 0.0, sum_sq_dev = 0.0, sum_se = 0.0;
+        std::vector<double> prices;
+        for (int s = 0; s < n_seeds; ++s) {
+            const MCResult m = mc_price_sobol(o, 1 << 12, 1000 + s);
+            prices.push_back(m.price);
+            sum += m.price;
+            sum_se += m.std_error;
+        }
+        for (double p : prices) sum_sq_dev += (p - sum / n_seeds) * (p - sum / n_seeds);
+        const double spread = std::sqrt(sum_sq_dev / (n_seeds - 1)), se = sum_se / n_seeds;
+        check(std::fabs(spread / se - 1.0) < 0.25, "sobol se vs spread", o, se, spread);
+
+        const MCResult sobol = mc_price_sobol(o, 1 << 16, 7), plain = mc_price(o, 1 << 16, 7, false);
+        check(sobol.std_error < plain.std_error, "sobol se vs plain", o, sobol.std_error, plain.std_error);
+
+        // 16x the paths would shrink a random estimate's error 4x.
+        const double coarse = mc_price_sobol(o, 1 << 12, 7).std_error;
+        check(sobol.std_error < coarse / 5, "sobol convergence", o, sobol.std_error, coarse);
+
+        check(mc_price_sobol(o, 1024, 3).price == mc_price_sobol(o, 1024, 3).price, "sobol seed", o, 0, 0);
+    }
+
+    // 19) Sobol at zero volatility, at its minimum path count, and with invalid inputs.
+    {
+        const Option flat{110, 100, 0.05, 0, 1, true}, o{100, 100, 0.05, 0.20, 1, true}, bad{0, 100, 0.05, 0.20, 1, true};
+        const double flat_se = mc_price_sobol(flat, 1024, 42).std_error;
+        check(flat_se == 0.0, "sobol zero vol", flat, flat_se, 0.0);
+
+        check(throws_invalid_argument([&] { mc_price_sobol(o, 0, 42); }), "sobol no paths", o, 0, 0);
+        check(throws_invalid_argument([&] { mc_price_sobol(o, 31, 42); }), "sobol too few paths", o, 31, 0);
+
+        const MCResult fewest = mc_price_sobol(o, 32, 42);
+        check(std::isfinite(fewest.price) && std::isfinite(fewest.std_error), "sobol min paths", o, fewest.std_error, 0);
+        check(throws_invalid_argument([&] { mc_price_sobol(bad, 1024, 42); }), "bad sobol", bad, 0, 0);
+    }
+
     std::printf("%d/%d checks passed across %zu option configurations (max |analytic - FD| Greek error: %.2e)\n",
                 n_checks - n_failed, n_checks, grid.size(), max_greek_err);
     return n_failed == 0 ? 0 : 1;
