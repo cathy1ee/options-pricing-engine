@@ -12,7 +12,7 @@ double implied_vol(const Option& o, double market_price) {
     // No-arbitrage bounds. At sigma = 0 the price is the lower bound, and it rises towards the
     // upper bound as sigma grows. A model price can round to just below the lower bound.
     const double lower = bs_price(x);
-    const double upper = o.is_call ? o.S : o.K * std::exp(-o.r * o.T);
+    const double upper = o.is_call ? o.S * std::exp(-o.q * o.T) : o.K * std::exp(-o.r * o.T);
     const double slack = 1e-12 * (o.S + o.K);
     if (!(market_price >= lower - slack && market_price < upper))
         throw std::invalid_argument("market price is outside the no-arbitrage bounds");
@@ -32,7 +32,7 @@ double implied_vol(const Option& o, double market_price) {
     }
 
     // Start at the Manaster-Koehler guess, where vega is largest for this moneyness.
-    const double moneyness = std::fabs(std::log(o.S / o.K) + o.r * o.T);
+    const double moneyness = std::fabs(std::log(o.S / o.K) + (o.r - o.q) * o.T);
     double sigma = moneyness > 0.0 ? std::min(std::max(std::sqrt(2.0 * moneyness / o.T), 0.1), hi) : 0.2;
     if (!(lo < sigma && sigma < hi)) sigma = 0.5 * (lo + hi);
 
