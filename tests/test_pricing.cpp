@@ -295,6 +295,49 @@ int main() {
               low_vol, 0, 0);
     }
 
+    // 14) Control variate agrees with Black-Scholes within 4 standard errors, as in check 4.
+    for (const Option& o : grid) {
+        const MCResult cv = mc_price_control_variate(o, 200000, 42);
+        const double bs = bs_price(o);
+        check(std::fabs(cv.price - bs) < 4 * cv.std_error + 1e-6, "control variate vs bs", o, cv.price, bs);
+    }
+
+    // 15) Control variate standard error: honest, smaller than plain, and reproducible.
+    for (const Option& o : {Option{100, 100, 0.05, 0.20, 1, true}, Option{100, 90, 0.05, 0.25, 0.5, false},
+                            Option{100, 80, 0.0, 0.50, 2, true}}) {
+        const int n_seeds = 100;
+        double sum = 0.0, sum_sq_dev = 0.0, sum_se = 0.0;
+        std::vector<double> prices;
+        for (int s = 0; s < n_seeds; ++s) {
+            const MCResult m = mc_price_control_variate(o, 10000, 1000 + s);
+            prices.push_back(m.price);
+            sum += m.price;
+            sum_se += m.std_error;
+        }
+        for (double p : prices) sum_sq_dev += (p - sum / n_seeds) * (p - sum / n_seeds);
+        const double spread = std::sqrt(sum_sq_dev / (n_seeds - 1)), se = sum_se / n_seeds;
+        check(std::fabs(spread / se - 1.0) < 0.25, "cv se vs spread", o, se, spread);
+
+        const MCResult cv = mc_price_control_variate(o, 100000, 7), plain = mc_price(o, 100000, 7, false);
+        check(cv.std_error < plain.std_error, "cv se vs plain", o, cv.std_error, plain.std_error);
+        check(mc_price_control_variate(o, 1000, 3).price == mc_price_control_variate(o, 1000, 3).price, "cv seed", o, 0,
+              0);
+    }
+
+    // 16) Control variate at zero volatility, at its minimum path count, and with invalid inputs.
+    {
+        const Option flat{110, 100, 0.05, 0, 1, true}, o{100, 100, 0.05, 0.20, 1, true}, bad{0, 100, 0.05, 0.20, 1, true};
+        const double flat_se = mc_price_control_variate(flat, 10000, 42).std_error;
+        check(flat_se == 0.0, "cv zero vol", flat, flat_se, 0.0);
+
+        for (std::uint64_t n : {0ULL, 1ULL, 2ULL, 3ULL})
+            check(throws_invalid_argument([&] { mc_price_control_variate(o, n, 42); }), "cv too few paths", o, (double)n, 0);
+
+        const MCResult fewest = mc_price_control_variate(o, 4, 42);
+        check(std::isfinite(fewest.price) && std::isfinite(fewest.std_error), "cv min paths", o, fewest.std_error, 0);
+        check(throws_invalid_argument([&] { mc_price_control_variate(bad, 1000, 42); }), "bad cv", bad, 0, 0);
+    }
+
     std::printf("%d/%d checks passed across %zu option configurations (max |analytic - FD| Greek error: %.2e)\n",
                 n_checks - n_failed, n_checks, grid.size(), max_greek_err);
     return n_failed == 0 ? 0 : 1;
