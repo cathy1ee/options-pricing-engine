@@ -11,8 +11,10 @@ jobs:
       matrix:
         compiler: [g++, clang++]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build and run tests
         run: make test CXX=${{ matrix.compiler }}
       - name: Build benchmark
         run: make build/convergence CXX=${{ matrix.compiler }}
+      - name: Build and run tests with custom CXXFLAGS
+        run: make clean && make test CXX=${{ matrix.compiler }} CXXFLAGS=-O3
