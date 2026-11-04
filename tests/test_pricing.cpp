@@ -24,19 +24,21 @@ static void check(bool ok, const char* what, const Option& o, double got, double
     ++n_checks;
     if (!ok) {
         ++n_failed;
-        std::printf("FAIL %-18s S=%.0f K=%.0f r=%.2f vol=%.2f T=%.2f %s: got %.8f want %.8f\n", what, o.S,
-                    o.K, o.r, o.sigma, o.T, o.is_call ? "call" : "put", got, want);
+        std::printf("FAIL %-18s S=%.0f K=%.0f r=%.2f vol=%.2f T=%.2f q=%.2f %s: got %.8f want %.8f\n", what, o.S,
+                    o.K, o.r, o.sigma, o.T, o.q, o.is_call ? "call" : "put", got, want);
     }
 }
 
-// Grid of market inputs covering in/at/out of the money, low/high vol, short/long expiry.
+// Grid of market inputs covering in/at/out of the money, low/high vol, short/long expiry, with and
+// without dividends.
 static std::vector<Option> test_grid() {
     std::vector<Option> grid;
     for (double K : {80.0, 90.0, 100.0, 110.0, 120.0})
         for (double sigma : {0.10, 0.25, 0.50})
             for (double T : {0.1, 0.5, 1.0, 2.0})
                 for (double r : {0.0, 0.05})
-                    for (bool call : {true, false}) grid.push_back({100.0, K, r, sigma, T, call});
+                    for (bool call : {true, false})
+                        for (double q : {0.0, 0.03}) grid.push_back({100.0, K, r, sigma, T, call, q});
     return grid;
 }
 
@@ -53,12 +55,12 @@ int main() {
     }
 
     for (const Option& o : grid) {
-        // 2) Put-call parity: C - P = S - K e^{-rT}
+        // 2) Put-call parity: C - P = S e^{-qT} - K e^{-rT}
         if (o.is_call) {
             Option p = o;
             p.is_call = false;
             const double lhs = bs_price(o) - bs_price(p);
-            const double rhs = o.S - o.K * std::exp(-o.r * o.T);
+            const double rhs = o.S * std::exp(-o.q * o.T) - o.K * std::exp(-o.r * o.T);
             check(std::fabs(lhs - rhs) < 1e-10, "put-call parity", o, lhs, rhs);
         }
 
@@ -131,7 +133,8 @@ int main() {
         const double nan = std::numeric_limits<double>::quiet_NaN();
         const Option bad[] = {{0, 100, 0.05, 0.20, 1, true},    {-1, 100, 0.05, 0.20, 1, true},
                               {100, 0, 0.05, 0.20, 1, true},    {100, 100, 0.05, 0.20, -1, true},
-                              {100, 100, 0.05, -0.20, 1, true}, {100, 100, 0.05, nan, 1, true}};
+                              {100, 100, 0.05, -0.20, 1, true}, {100, 100, 0.05, nan, 1, true},
+                              {100, 100, 0.05, 0.20, 1, true, nan}};
         for (const Option& o : bad) {
             check(throws_invalid_argument([&] { bs_price(o); }), "bad bs_price", o, 0, 0);
             check(throws_invalid_argument([&] { bs_greeks(o); }), "bad bs_greeks", o, 0, 0);
@@ -247,12 +250,13 @@ int main() {
         check(std::fabs(european - bs) < 0.02, "tree vs bs", o, european, bs);
 
         const double eu = binomial_price(o, 200, Exercise::European), am = binomial_price(o, 200, Exercise::American);
-        if (o.is_call) {
+        if (o.is_call && o.q == 0.0) {
             // Without dividends early exercise never pays for a call.
             check(std::fabs(am - eu) < 1e-9, "american call", o, am, eu);
         } else {
-            check(am >= eu - 1e-12, "american put >= european", o, am, eu);
-            check(am >= o.K - o.S - 1e-12, "american put >= intrinsic", o, am, o.K - o.S);
+            const double intrinsic = o.is_call ? o.S - o.K : o.K - o.S;
+            check(am >= eu - 1e-12, "american >= european", o, am, eu);
+            check(am >= intrinsic - 1e-12, "american >= intrinsic", o, am, intrinsic);
         }
     }
 
@@ -422,6 +426,39 @@ int main() {
         check(throws_invalid_argument([&] { mc_price_parallel(o, 1000, 42, false, 0); }), "parallel no threads", o, 0, 0);
         check(throws_invalid_argument([&] { mc_price_parallel(o, 1, 42, false, 4); }), "parallel too few", o, 1, 0);
         check(throws_invalid_argument([&] { mc_price_parallel(bad, 1000, 42, false, 4); }), "bad parallel", bad, 0, 0);
+    }
+
+    // 23) A dividend yield is equivalent to a lower spot with no dividends.
+    for (const Option& o : grid) {
+        if (o.q == 0.0) continue;
+        Option no_div = o;
+        no_div.S = o.S * std::exp(-o.q * o.T);
+        no_div.q = 0.0;
+        check(std::fabs(bs_price(o) - bs_price(no_div)) < 1e-10, "dividend as spot", o, bs_price(o), bs_price(no_div));
+    }
+
+    // 24) Dividends in the limits, and the early exercise they make worthwhile.
+    {
+        const Option flat{110, 100, 0.05, 0, 1, true, 0.02};
+        const double want = 110.0 * std::exp(-0.02) - 100.0 * std::exp(-0.05);
+        check(std::fabs(bs_price(flat) - want) < 1e-12, "dividend limit price", flat, bs_price(flat), want);
+        const double delta = bs_greeks(flat).delta;
+        check(std::fabs(delta - std::exp(-0.02)) < 1e-12, "dividend limit delta", flat, delta, std::exp(-0.02));
+
+        const Option deep{100, 80, 0.05, 0.20, 1, true, 0.10};
+        const double am = binomial_price(deep, 200, Exercise::American);
+        const double eu = binomial_price(deep, 200, Exercise::European);
+        check(am > eu + 0.01, "american call with dividends", deep, am, eu);
+
+        // At zero volatility the best time to exercise can fall strictly between now and expiry.
+        const Option timed{100, 100, 0.05, 0, 40, true, 0.02};
+        double best = 0.0;
+        for (int i = 0; i <= 100000; ++i) {
+            const double t = 40.0 * i / 100000;
+            best = std::max(best, 100.0 * std::exp(-0.02 * t) - 100.0 * std::exp(-0.05 * t));
+        }
+        const double timed_am = binomial_price(timed, 10, Exercise::American);
+        check(std::fabs(timed_am - best) < 1e-6, "american exercise time", timed, timed_am, best);
     }
 
     std::printf("%d/%d checks passed across %zu option configurations (max |analytic - FD| Greek error: %.2e)\n",
