@@ -8,14 +8,14 @@
 
 namespace {
 // Terminal prices and payoffs under the risk-neutral measure, where
-// S_T = S * exp((r - sigma^2/2) T + sigma sqrt(T) Z).
+// S_T = S * exp((r - q - sigma^2/2) T + sigma sqrt(T) Z).
 struct Model {
     const Option& o;
     double drift, vol, disc;
 
     explicit Model(const Option& option)
         : o(option),
-          drift((o.r - 0.5 * o.sigma * o.sigma) * o.T),
+          drift((o.r - o.q - 0.5 * o.sigma * o.sigma) * o.T),
           vol(o.sigma * std::sqrt(o.T)),
           disc(std::exp(-o.r * o.T)) {}
 
@@ -212,7 +212,7 @@ MCResult mc_price_control_variate(const Option& o, std::uint64_t n_paths, std::u
     const double beta = var_st > 0.0 ? cov / var_st : 0.0;
 
     // E[S_T] is known exactly, so subtracting beta * (S_T - E[S_T]) leaves the mean unchanged.
-    const double forward = o.S * std::exp(o.r * o.T);
+    const double forward = o.S * std::exp((o.r - o.q) * o.T);
     RunningStats stats;
     for (std::uint64_t i = n_pilot; i < n_paths; ++i) {
         const double st = model.terminal(normal(rng));
