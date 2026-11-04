@@ -56,6 +56,13 @@ struct MCResult {
 // than 2 samples (n_paths < 2, or n_paths < 4 with antithetic), where a standard error is undefined.
 MCResult mc_price(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bool antithetic);
 
+// Quasi-Monte Carlo with Sobol points, which fill the distribution more evenly than random draws
+// and so converge faster than 1/sqrt(N). The paths are split into 32 independently scrambled
+// replications, and the standard error comes from the spread of their estimates. A power of 2
+// paths gives the most even coverage, and any remainder after dividing by 32 is dropped. Throws
+// std::invalid_argument for invalid options or n_paths < 32.
+MCResult mc_price_sobol(const Option& o, std::uint64_t n_paths, std::uint64_t seed);
+
 // Monte Carlo with the discounted underlying as a control variate. The first 10% of the paths are a
 // pilot run that sets the coefficient and do not count towards the price, which keeps it unbiased.
 // Deep out of the money the underlying says little about the payoff, so the pilot can make the
