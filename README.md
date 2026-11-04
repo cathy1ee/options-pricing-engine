@@ -10,6 +10,7 @@ Prices European options three ways and checks each one against the others: close
 |---|---|
 | `bs_price` | Closed-form Black-Scholes price for European calls and puts. |
 | `bs_greeks` | Analytic delta, gamma, vega, theta and rho. |
+| `implied_vol` | Recovers volatility from a market price, using Newton's method with the analytic vega and falling back to bisection. |
 | `mc_price` | Monte Carlo pricing under risk-neutral geometric Brownian motion. It returns the price **and its standard error**, with optional antithetic variates. |
 
 ## Model
@@ -32,7 +33,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 
 ## Validation
 
-`make test` runs 1,897 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
+`make test` runs 2,148 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
 
 | Check | What it verifies | Tolerance |
 |---|---|---|
@@ -41,6 +42,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 | Greeks | Analytic Greeks against central finite differences of the price | 1e-4 relative plus 5e-6 absolute (max absolute error observed: 1.35e-5) |
 | Monte Carlo | Plain and antithetic MC prices (200k paths) against Black-Scholes | within 4 standard errors |
 | Standard error | Matches the spread of prices over 100 seeds, shrinks like 1/√N, and is smaller with antithetic variates | 25% for spread, 10% for scaling |
+| Implied volatility | Pricing and inverting recovers σ on every configuration, or the price where vega is too small to pin down σ | 1e-8 on σ, or 1e-12 on price |
 | Limits | Prices and Greeks at `T = 0` and `σ = 0` against their closed-form limits | 1e-12 |
 | Invalid inputs | Every pricer rejects bad options, and Monte Carlo rejects too few paths | exact |
 | Low volatility | MC standard error at `σ = 0` and `σ = 1e-8` | exact at 0, 5% at 1e-8 |
@@ -74,6 +76,7 @@ Timings come from a single Linux machine with `-O2`; your numbers will differ.
 ```
 include/pricing.hpp     public API: Option, Greeks, MCResult
 src/black_scholes.cpp   closed-form price and Greeks
+src/implied_vol.cpp     implied volatility solver
 src/monte_carlo.cpp     Monte Carlo pricer with standard error and antithetic variates
 tests/test_pricing.cpp  self-contained test suite (no framework)
 bench/convergence.cpp   convergence, variance-reduction and speed benchmark
@@ -83,7 +86,6 @@ Makefile
 ## Limitations and next steps
 
 - Only European exercise, constant volatility and no dividends.
-- **Implied volatility:** invert Black-Scholes with Newton's method, using the analytic vega, and fall back to bisection when vega is small.
 - **American options:** a binomial tree (Cox-Ross-Rubinstein), checked against Black-Scholes for European options as a consistency test.
 - **More variance reduction:** use the discounted underlying as a control variate, or quasi-random (Sobol) draws.
 - **Parallel Monte Carlo:** independent RNG streams per thread.
