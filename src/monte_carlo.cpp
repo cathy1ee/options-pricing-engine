@@ -1,8 +1,10 @@
 #include "pricing.hpp"
 #include <algorithm>
 #include <cmath>
+#include <future>
 #include <random>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 // Terminal prices and payoffs under the risk-neutral measure, where
@@ -34,8 +36,46 @@ struct RunningStats {
         mean += delta / n;
         sq_dev += delta * (x - mean);
     }
+    // Combines two sets of samples, as if every sample had gone through add (Chan et al.).
+    void merge(const RunningStats& other) {
+        if (other.n == 0) return;
+        if (n == 0) {
+            *this = other;
+            return;
+        }
+        const double total = (double)n + (double)other.n;
+        const double delta = other.mean - mean;
+        mean += delta * ((double)other.n / total);
+        sq_dev += other.sq_dev + delta * delta * ((double)n * (double)other.n / total);
+        n += other.n;
+    }
+
     double std_error() const { return std::sqrt(sq_dev / (n - 1) / n); }
 };
+
+// Runs n_samples samples on a random stream of their own.
+RunningStats simulate(const Model& model, std::uint64_t n_samples, std::uint64_t seed, bool antithetic) {
+    std::mt19937_64 rng(seed);
+    std::normal_distribution<double> normal(0.0, 1.0);
+    auto payoff_at = [&](double z) { return model.payoff(model.terminal(z)); };
+
+    RunningStats stats;
+    for (std::uint64_t i = 0; i < n_samples; ++i) {
+        const double z = normal(rng);
+        stats.add(antithetic ? 0.5 * (payoff_at(z) + payoff_at(-z)) : payoff_at(z));
+    }
+    return stats;
+}
+
+// Derives a seed for one stream with SplitMix64. Consecutive seeds can start mt19937_64 in related
+// states, so each stream's seed is scrambled. Overlap between streams is then extremely unlikely,
+// though not impossible, since mt19937_64 has no way to guarantee disjoint streams.
+std::uint64_t stream_seed(std::uint64_t seed, std::uint64_t stream) {
+    std::uint64_t z = seed + (stream + 1) * 0x9E3779B97F4A7C15ULL;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
 
 // Inverse of the standard normal CDF for p strictly between 0 and 1: Acklam's rational
 // approximation, polished to near machine precision with one Halley step.
@@ -89,17 +129,33 @@ MCResult mc_price(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bo
     const std::uint64_t n_samples = antithetic ? n_paths / 2 : n_paths;
     if (n_samples < 2) throw std::invalid_argument("need at least 2 samples for a standard error");
 
-    std::mt19937_64 rng(seed);
-    std::normal_distribution<double> normal(0.0, 1.0);
     const Model model(o);
+    const RunningStats stats = simulate(model, n_samples, seed, antithetic);
+    return {model.disc * stats.mean, model.disc * stats.std_error()};
+}
 
-    auto payoff_at = [&](double z) { return model.payoff(model.terminal(z)); };
+MCResult mc_price_parallel(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bool antithetic,
+                           unsigned n_threads) {
+    validate_option(o);
+    if (n_threads == 0) throw std::invalid_argument("need at least 1 thread");
 
-    RunningStats stats;
-    for (std::uint64_t i = 0; i < n_samples; ++i) {
-        const double z = normal(rng);
-        stats.add(antithetic ? 0.5 * (payoff_at(z) + payoff_at(-z)) : payoff_at(z));
+    const std::uint64_t n_samples = antithetic ? n_paths / 2 : n_paths;
+    if (n_samples < 2) throw std::invalid_argument("need at least 2 samples for a standard error");
+
+    // Samples are split as evenly as possible, and each thread gets its own random stream.
+    const Model model(o);
+    std::vector<std::future<RunningStats>> workers;
+    for (unsigned t = 0; t < n_threads; ++t) {
+        const std::uint64_t share = n_samples / n_threads + (t < n_samples % n_threads ? 1 : 0);
+        const std::uint64_t worker_seed = stream_seed(seed, t);
+        workers.push_back(std::async(std::launch::async, [&model, share, worker_seed, antithetic] {
+            return simulate(model, share, worker_seed, antithetic);
+        }));
     }
+
+    // Merging in thread order keeps the result the same on every run.
+    RunningStats stats;
+    for (std::future<RunningStats>& worker : workers) stats.merge(worker.get());
     return {model.disc * stats.mean, model.disc * stats.std_error()};
 }
 
