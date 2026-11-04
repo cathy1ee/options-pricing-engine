@@ -19,7 +19,13 @@ struct Greeks {
     double rho;    // dV/dr          (per 1.00 change in rate)
 };
 
+// Throws std::invalid_argument unless S > 0, K > 0, sigma >= 0 and T >= 0. NaN is rejected.
+void validate_option(const Option& o);
+
 // ---- Closed-form Black-Scholes ----
+// Both functions validate their input. T = 0 and sigma = 0 are valid: the price is the discounted
+// intrinsic value on the forward and delta is a step (+-0.5 exactly at the present value of the
+// strike). Gamma is 0 by convention, and theta leaves out the sigma-driven decay term.
 double bs_price(const Option& o);
 Greeks bs_greeks(const Option& o);
 
@@ -30,5 +36,7 @@ struct MCResult {
 };
 
 // Simulates n_paths terminal prices under geometric Brownian motion.
-// antithetic = true pairs each normal draw Z with -Z to reduce variance.
+// antithetic = true pairs each normal draw Z with -Z to reduce variance. An odd n_paths is then
+// rounded down to an even number. Throws std::invalid_argument for invalid options, or for fewer
+// than 2 samples (n_paths < 2, or n_paths < 4 with antithetic), where a standard error is undefined.
 MCResult mc_price(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bool antithetic);
