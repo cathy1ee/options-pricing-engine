@@ -14,14 +14,16 @@ jobs:
           check() {
             sed -i "$2" "$3"
             if git diff --quiet; then echo "NOT APPLIED: $1"; exit 1; fi
-            if make clean test > out.txt 2>&1; then echo "SURVIVED: $1"; exit 1; fi
-            if ! grep -q 'checks passed' out.txt; then cat out.txt; echo "DID NOT RUN: $1"; exit 1; fi
-            echo "CAUGHT: $1 | $(grep 'checks passed' out.txt | cut -d' ' -f1)"
+            make clean build/test_pricing > build.txt 2>&1 || { cat build.txt; echo "DID NOT BUILD: $1"; exit 1; }
+            if ./build/test_pricing > out.txt 2>&1; then echo "SURVIVED: $1"; exit 1; fi
+            echo "CAUGHT: $1 | $(tail -1 out.txt | cut -c1-60)"
             git checkout -- "$3"
           }
           check 'gamma 1% too high' 's/g.gamma = div_disc/g.gamma = 1.01 * div_disc/' src/black_scholes.cpp
           check 'plain path 2% too high' 's/: payoff_at(z));/: 1.02 * payoff_at(z));/' src/monte_carlo.cpp
           check 'std_error 3x too large' 's/return std::sqrt(sq_dev/return 3.0 * std::sqrt(sq_dev/' src/monte_carlo.cpp
+          check 'implied vol fallback removed' 's/if (!(lo < next \&\& next < hi)) next = 0.5 \* (lo + hi);//' src/implied_vol.cpp
+          check 'Halley step removed' 's/return x - u \/ (1.0 + 0.5 \* x \* u);/return x;/' src/monte_carlo.cpp
 
   thread-sanitizer:
     runs-on: ubuntu-latest

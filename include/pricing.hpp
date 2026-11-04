@@ -23,6 +23,9 @@ struct Greeks {
 // Throws std::invalid_argument unless S > 0, K > 0, sigma >= 0, T >= 0 and q is finite. NaN is rejected.
 void validate_option(const Option& o);
 
+// Inverse of the standard normal CDF. Throws std::invalid_argument unless p is strictly between 0 and 1.
+double inverse_normal_cdf(double p);
+
 // ---- Closed-form Black-Scholes ----
 // Both functions validate their input. T = 0 and sigma = 0 are valid: the price is the discounted
 // intrinsic value on the forward and delta is a step (+-0.5 exactly at the present value of the

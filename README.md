@@ -41,7 +41,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 
 ## Validation
 
-`make test` runs 7,258 checks, and all of them pass. Most run across a grid of 480 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, dividend yields of 0% and 3%, and both calls and puts.
+`make test` runs 7,376 checks, and all of them pass. Most run across a grid of 480 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, dividend yields of 0% and 3%, and both calls and puts.
 
 | Check | What it verifies | Tolerance |
 |---|---|---|
@@ -54,8 +54,9 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 | Sobol | MC price (65,536 paths) against Black-Scholes, and a standard error that matches the spread over 100 seeds, beats plain MC, and shrinks faster than 1/√N | within 5 standard errors, 25% for spread |
 | Parallel | MC price (200k paths, 4 threads) against Black-Scholes, repeatable for a seed, and matching a single-threaded price and standard error | within 4 standard errors, 5% on standard error |
 | Standard error | Matches the spread of prices over 100 seeds, shrinks like 1/√N, and is smaller with antithetic variates | 25% for spread, 10% for scaling |
-| Implied volatility | Pricing and inverting recovers σ on every configuration, or the price where vega is too small to pin down σ | 1e-8 on σ, or 1e-12 on price |
+| Implied volatility | Pricing and inverting recovers σ on every configuration, or the price where vega is too small to pin down σ, plus cases Newton's method cannot solve alone | 1e-8 on σ, or 1e-12 on price |
 | Binomial tree | European prices (500 steps) against Black-Scholes, American calls equal European calls without dividends, American prices at or above the European price and intrinsic value, and Hull's American put at 5 to 500 steps | ±0.02, 1e-9, 1e-12, ±0.002 |
+| Inverse normal | Known quantiles, round trips through the normal CDF, and invalid inputs | 1e-9, 1e-14 |
 | Limits | Prices and Greeks at `T = 0` and `σ = 0` against their closed-form limits | 1e-12 |
 | Invalid inputs | Every pricer rejects bad options, and Monte Carlo rejects too few paths | exact |
 | Low volatility | MC standard error at `σ = 0` and `σ = 1e-8` | exact at 0, 5% at 1e-8 |

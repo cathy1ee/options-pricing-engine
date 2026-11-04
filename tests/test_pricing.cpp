@@ -461,6 +461,48 @@ int main() {
         check(std::fabs(timed_am - best) < 1e-6, "american exercise time", timed, timed_am, best);
     }
 
+    // 25) Implied volatility where Newton's method alone fails: its first step leaves the bracket, so
+    //     these only converge through the bisection fallback.
+    for (const Option& o : {Option{100, 50, 0.05, 0.80, 0.1, false}, Option{100, 50, 0.0, 1.0, 0.1, false},
+                            Option{100, 50, 0.0, 1.0, 0.25, true}, Option{100, 50, 0.05, 1.0, 0.02, true}}) {
+        const double iv = implied_vol(o, bs_price(o));
+        check(std::fabs(iv - o.sigma) < 1e-8, "implied vol fallback", o, iv, o.sigma);
+    }
+
+    // 26) Inverse normal CDF: known quantiles, round trips through the CDF, and invalid inputs.
+    {
+        const Option none{100, 100, 0.05, 0.20, 1, true};  // check() reports an option; these have none
+        auto cdf = [](double x) { return 0.5 * std::erfc(-x / std::sqrt(2.0)); };
+
+        const struct {
+            double p, x;
+        } quantiles[] = {{0.5, 0.0},
+                         {0.975, 1.9599639845400534},
+                         {0.995, 2.5758293035489},
+                         {0.001, -3.090232306167813},
+                         {1e-6, -4.753424308822899},
+                         {1e-10, -6.361340902404057}};
+        for (const auto& k : quantiles) {
+            const double x = inverse_normal_cdf(k.p);
+            check(std::fabs(x - k.x) < 1e-9, "normal quantile", none, x, k.x);
+        }
+
+        for (int i = 1; i < 100; ++i) {
+            const double p = i / 100.0, back = cdf(inverse_normal_cdf(p));
+            check(std::fabs(back - p) < 1e-14, "normal round trip", none, back, p);
+        }
+        for (double p : {1e-12, 1e-8, 1e-4}) {
+            const double back = cdf(inverse_normal_cdf(p));
+            check(std::fabs(back / p - 1.0) < 1e-10, "normal tail round trip", none, back, p);
+        }
+
+        const double upper = inverse_normal_cdf(1.0 - 1e-6), lower = inverse_normal_cdf(1e-6);
+        check(std::fabs(upper + lower) < 1e-8, "normal symmetry", none, upper, -lower);
+
+        for (double p : {0.0, 1.0, -0.1, 1.5, std::numeric_limits<double>::quiet_NaN()})
+            check(throws_invalid_argument([&] { inverse_normal_cdf(p); }), "bad probability", none, p, 0);
+    }
+
     std::printf("%d/%d checks passed across %zu option configurations (max |analytic - FD| Greek error: %.2e)\n",
                 n_checks - n_failed, n_checks, grid.size(), max_greek_err);
     return n_failed == 0 ? 0 : 1;

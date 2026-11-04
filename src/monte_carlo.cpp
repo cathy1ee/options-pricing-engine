@@ -121,6 +121,11 @@ std::uint64_t reverse_bits(std::uint64_t x) {
 }
 }  // namespace
 
+double inverse_normal_cdf(double p) {
+    if (!(p > 0.0 && p < 1.0)) throw std::invalid_argument("probability must be strictly between 0 and 1");
+    return norm_inv(p);
+}
+
 MCResult mc_price(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bool antithetic) {
     validate_option(o);
 
