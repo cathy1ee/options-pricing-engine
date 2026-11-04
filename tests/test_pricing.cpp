@@ -1,7 +1,9 @@
 // Self-contained tests: no framework needed. Build with `make test`.
 #include "pricing.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <utility>
 #include <vector>
 
 static int n_checks = 0, n_failed = 0;
