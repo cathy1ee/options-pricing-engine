@@ -203,6 +203,44 @@ int main() {
         check(mc_price(o, 1000, 3, true).price == mc_price(o, 1000, 3, true).price, "antithetic seed", o, 0, 0);
     }
 
+    // 10) Implied volatility round trips. Where vega is tiny the price no longer pins down the
+    //     volatility, so matching the price is the most that can be asked for.
+    for (const Option& o : grid) {
+        const double price = bs_price(o);
+        Option back = o;
+        back.sigma = implied_vol(o, price);
+        check(std::fabs(back.sigma - o.sigma) < 1e-8 || std::fabs(bs_price(back) - price) < 1e-12, "implied vol", o,
+              back.sigma, o.sigma);
+    }
+
+    // 11) Implied volatility away from the grid, and at and beyond its bounds.
+    {
+        for (const Option& o : {Option{100, 100, 0.05, 3.0, 1, true}, Option{100, 100, 0.05, 0.01, 0.01, true},
+                                Option{100, 150, 0.05, 0.20, 0.5, true}}) {
+            const double iv = implied_vol(o, bs_price(o));
+            check(std::fabs(iv - o.sigma) < 1e-8, "implied vol extreme", o, iv, o.sigma);
+        }
+
+        const Option c{100, 100, 0.05, 0.20, 1, true}, p{100, 100, 0.05, 0.20, 1, false};
+        Option no_vol = c;
+        no_vol.sigma = std::numeric_limits<double>::quiet_NaN();
+        const double iv = implied_vol(no_vol, bs_price(c));
+        check(std::fabs(iv - c.sigma) < 1e-8, "implied vol ignores sigma", c, iv, c.sigma);
+
+        Option flat = c;
+        flat.sigma = 0.0;
+        const double at_lower = implied_vol(c, bs_price(flat));
+        check(at_lower == 0.0, "implied vol at lower bound", c, at_lower, 0.0);
+
+        const Option expired{100, 100, 0.05, 0.20, 0, true};
+        check(throws_invalid_argument([&] { implied_vol(c, 100.0); }), "iv at upper bound", c, 100.0, 0);
+        check(throws_invalid_argument([&] { implied_vol(c, 1.0); }), "iv below lower bound", c, 1.0, 0);
+        check(throws_invalid_argument([&] { implied_vol(p, 96.0); }), "iv above put bound", p, 96.0, 0);
+        check(throws_invalid_argument([&] { implied_vol(p, -1.0); }), "iv negative price", p, -1.0, 0);
+        check(throws_invalid_argument([&] { implied_vol(c, no_vol.sigma); }), "iv nan price", c, 0, 0);
+        check(throws_invalid_argument([&] { implied_vol(expired, 1.0); }), "iv at expiry", expired, 1.0, 0);
+    }
+
     std::printf("%d/%d checks passed across %zu option configurations (max |analytic - FD| Greek error: %.2e)\n",
                 n_checks - n_failed, n_checks, grid.size(), max_greek_err);
     return n_failed == 0 ? 0 : 1;
