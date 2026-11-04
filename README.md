@@ -11,12 +11,14 @@ Prices European options three ways and checks each one against the others: close
 | `bs_price` | Closed-form Black-Scholes price for European calls and puts. |
 | `bs_greeks` | Analytic delta, gamma, vega, theta and rho. |
 | `implied_vol` | Recovers volatility from a market price, using Newton's method with the analytic vega and falling back to bisection. |
+| `binomial_price` | European and American prices on a Cox-Ross-Rubinstein binomial tree. |
 | `mc_price` | Monte Carlo pricing under risk-neutral geometric Brownian motion. It returns the price **and its standard error**, with optional antithetic variates. |
 
 ## Model
 
 - **Underlying:** geometric Brownian motion, `S_T = S·exp((r − σ²/2)T + σ√T·Z)` with `Z ~ N(0,1)`.
 - **Black-Scholes:** `C = S·N(d1) − K·e^(−rT)·N(d2)`, where `d1 = [ln(S/K) + (r + σ²/2)T] / (σ√T)` and `d2 = d1 − σ√T`.
+- **Binomial tree:** the spot moves up by `u = e^(σ√Δt)` or down by `1/u` each step, with risk-neutral up probability `p = (e^(rΔt) − 1/u) / (u − 1/u)`. American prices take the larger of holding and exercising at each node.
 - **Antithetic variates:** each draw `Z` is paired with `−Z`, and the two payoffs are averaged into one sample. The standard error is computed over these pairs, since they are the independent samples (N paths give N/2 samples).
 - **Units:** vega and rho are per 1.00 change in volatility or rate. Theta is per year.
 - **Edge cases:** `T = 0` and `σ = 0` return the discounted intrinsic value on the forward, with gamma 0 by convention. Invalid inputs (`S ≤ 0`, `K ≤ 0`, `T < 0`, `σ < 0`, NaN) and Monte Carlo runs with fewer than 2 samples throw `std::invalid_argument`.
@@ -33,7 +35,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 
 ## Validation
 
-`make test` runs 2,148 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
+`make test` runs 2,761 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
 
 | Check | What it verifies | Tolerance |
 |---|---|---|
@@ -43,6 +45,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 | Monte Carlo | Plain and antithetic MC prices (200k paths) against Black-Scholes | within 4 standard errors |
 | Standard error | Matches the spread of prices over 100 seeds, shrinks like 1/√N, and is smaller with antithetic variates | 25% for spread, 10% for scaling |
 | Implied volatility | Pricing and inverting recovers σ on every configuration, or the price where vega is too small to pin down σ | 1e-8 on σ, or 1e-12 on price |
+| Binomial tree | European prices (500 steps) against Black-Scholes, American calls equal European calls, American puts at or above the European price and intrinsic value, and Hull's American put at 5 to 500 steps | ±0.02, 1e-9, 1e-12, ±0.002 |
 | Limits | Prices and Greeks at `T = 0` and `σ = 0` against their closed-form limits | 1e-12 |
 | Invalid inputs | Every pricer rejects bad options, and Monte Carlo rejects too few paths | exact |
 | Low volatility | MC standard error at `σ = 0` and `σ = 1e-8` | exact at 0, 5% at 1e-8 |
@@ -75,6 +78,7 @@ Timings come from a single Linux machine with `-O2`; your numbers will differ.
 
 ```
 include/pricing.hpp     public API: Option, Greeks, MCResult
+src/binomial.cpp        Cox-Ross-Rubinstein binomial tree
 src/black_scholes.cpp   closed-form price and Greeks
 src/implied_vol.cpp     implied volatility solver
 src/monte_carlo.cpp     Monte Carlo pricer with standard error and antithetic variates
@@ -85,8 +89,7 @@ Makefile
 
 ## Limitations and next steps
 
-- Only European exercise, constant volatility and no dividends.
-- **American options:** a binomial tree (Cox-Ross-Rubinstein), checked against Black-Scholes for European options as a consistency test.
+- Constant volatility and no dividends. American exercise is only available on the binomial tree.
 - **More variance reduction:** use the discounted underlying as a control variate, or quasi-random (Sobol) draws.
 - **Parallel Monte Carlo:** independent RNG streams per thread.
 
