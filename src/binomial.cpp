@@ -11,16 +11,26 @@ double binomial_price(const Option& o, std::uint32_t steps, Exercise exercise) {
     const bool american = exercise == Exercise::American;
     auto payoff = [&](double spot) { return std::max(o.is_call ? spot - o.K : o.K - spot, 0.0); };
 
-    // With no randomness left the value of exercising at time t is linear in e^{-rt}, so the best
-    // time to exercise is either now or at expiry.
-    if (o.sigma * std::sqrt(o.T) == 0.0) return american ? std::max(bs_price(o), payoff(o.S)) : bs_price(o);
+    // With no randomness left exercising at time t is worth +-(S e^{-qt} - K e^{-rt}) today. Its only
+    // turning point is at t_best, so the best time to exercise is now, at expiry, or then. With r or q
+    // zero or equal t_best comes out infinite or NaN, and the range check drops it.
+    if (o.sigma * std::sqrt(o.T) == 0.0) {
+        if (!american) return bs_price(o);
+        auto value_at = [&](double t) {
+            const double forward_gain = o.S * std::exp(-o.q * t) - o.K * std::exp(-o.r * t);
+            return std::max(o.is_call ? forward_gain : -forward_gain, 0.0);
+        };
+        const double t_best = std::log(o.q * o.S / (o.r * o.K)) / (o.q - o.r);
+        const double ends = std::max(value_at(0.0), value_at(o.T));
+        return t_best > 0.0 && t_best < o.T ? std::max(ends, value_at(t_best)) : ends;
+    }
 
     // Cox-Ross-Rubinstein: the spot moves up by e^{sigma sqrt(dt)} or down by its inverse each step.
     const std::size_t n = steps;
     const double dt = o.T / n;
     const double jump = o.sigma * std::sqrt(dt);
     const double up = std::exp(jump), down = 1.0 / up;
-    const double p = (std::exp(o.r * dt) - down) / (up - down);  // risk-neutral up probability
+    const double p = (std::exp((o.r - o.q) * dt) - down) / (up - down);  // risk-neutral up probability
     if (!(p > 0.0 && p < 1.0)) throw std::invalid_argument("too few steps for this rate and volatility");
     const double disc = std::exp(-o.r * dt);
 
