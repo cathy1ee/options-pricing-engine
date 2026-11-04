@@ -82,7 +82,7 @@ int main() {
         for (int i = 0; i < 5; ++i) {
             const double err = std::fabs(fd[i] - an[i]);
             max_greek_err = std::max(max_greek_err, err);
-            check(err < 1e-4 * std::max(1.0, std::fabs(an[i])), names[i], o, an[i], fd[i]);
+            check(err < 5e-6 + 1e-4 * std::fabs(an[i]), names[i], o, an[i], fd[i]);
         }
 
         // 4) Monte Carlo agrees with Black-Scholes within 4 standard errors (plus 1e-6 absolute, since
@@ -90,6 +90,8 @@ int main() {
         const MCResult mc = mc_price(o, 200000, 42, true);
         const double bs = bs_price(o);
         check(std::fabs(mc.price - bs) < 4 * mc.std_error + 1e-6, "mc vs bs", o, mc.price, bs);
+        const MCResult plain = mc_price(o, 200000, 42, false);
+        check(std::fabs(plain.price - bs) < 4 * plain.std_error + 1e-6, "plain mc vs bs", o, plain.price, bs);
     }
 
     // 5) Limits with no randomness left: T = 0 or sigma = 0.
@@ -168,6 +170,37 @@ int main() {
         const Option o{1000, 50, 0.05, 1e-8, 1, true};
         const double se = mc_price(o, 1000000, 42, false).std_error, want = 1000 * 1e-8 / 1000;
         check(std::fabs(se - want) < 0.05 * want, "low vol std error", o, se, want);
+    }
+
+    // 9) The reported standard error means what it says.
+    for (const Option& o : {Option{100, 100, 0.05, 0.20, 1, true}, Option{100, 90, 0.05, 0.25, 0.5, false},
+                            Option{100, 80, 0.0, 0.50, 2, true}}) {
+        // It matches the observed spread of prices across seeds.
+        const int n_seeds = 100;
+        double sum = 0.0, sum_sq_dev = 0.0, sum_se = 0.0;
+        std::vector<double> prices;
+        for (int s = 0; s < n_seeds; ++s) {
+            const MCResult m = mc_price(o, 10000, 1000 + s, false);
+            prices.push_back(m.price);
+            sum += m.price;
+            sum_se += m.std_error;
+        }
+        for (double p : prices) sum_sq_dev += (p - sum / n_seeds) * (p - sum / n_seeds);
+        const double spread = std::sqrt(sum_sq_dev / (n_seeds - 1)), se = sum_se / n_seeds;
+        check(std::fabs(spread / se - 1.0) < 0.25, "se vs spread", o, se, spread);
+
+        // It shrinks like 1/sqrt(N).
+        const MCResult small = mc_price(o, 10000, 7, false), large = mc_price(o, 100000, 7, false);
+        const double shrink = small.std_error / large.std_error;
+        check(std::fabs(shrink - std::sqrt(10.0)) < 0.1 * std::sqrt(10.0), "se scaling", o, shrink, std::sqrt(10.0));
+
+        // Antithetic variates reduce it for these monotonic payoffs.
+        const MCResult anti = mc_price(o, 100000, 7, true);
+        check(anti.std_error < large.std_error, "antithetic se", o, anti.std_error, large.std_error);
+
+        // The same seed gives the same result.
+        check(mc_price(o, 1000, 3, false).price == mc_price(o, 1000, 3, false).price, "plain seed", o, 0, 0);
+        check(mc_price(o, 1000, 3, true).price == mc_price(o, 1000, 3, true).price, "antithetic seed", o, 0, 0);
     }
 
     std::printf("%d/%d checks passed across %zu option configurations (max |analytic - FD| Greek error: %.2e)\n",
