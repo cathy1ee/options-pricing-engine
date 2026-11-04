@@ -36,6 +36,49 @@ struct RunningStats {
     }
     double std_error() const { return std::sqrt(sq_dev / (n - 1) / n); }
 };
+
+// Inverse of the standard normal CDF for p strictly between 0 and 1: Acklam's rational
+// approximation, polished to near machine precision with one Halley step.
+double norm_inv(double p) {
+    constexpr double a[] = {-3.969683028665376e+01, 2.209460984245205e+02,  -2.759285104469687e+02,
+                            1.383577518672690e+02,  -3.066479806614716e+01, 2.506628277459239e+00};
+    constexpr double b[] = {-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+                            6.680131188771972e+01,  -1.328068155288572e+01};
+    constexpr double c[] = {-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+                            -2.549732539343734e+00, 4.374664141464968e+00,  2.938163982698783e+00};
+    constexpr double d[] = {7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+                            3.754408661907416e+00};
+    constexpr double tail = 0.02425;
+
+    auto tail_value = [&](double q) {
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+               ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0);
+    };
+
+    double x;
+    if (p < tail) {
+        x = tail_value(std::sqrt(-2.0 * std::log(p)));
+    } else if (p > 1.0 - tail) {
+        x = -tail_value(std::sqrt(-2.0 * std::log(1.0 - p)));
+    } else {
+        const double q = p - 0.5, r = q * q;
+        x = (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+            (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0);
+    }
+
+    const double err = 0.5 * std::erfc(-x / std::sqrt(2.0)) - p;
+    const double u = err * std::sqrt(2.0 * 3.14159265358979323846) * std::exp(0.5 * x * x);
+    return x - u / (1.0 + 0.5 * x * u);
+}
+
+std::uint64_t reverse_bits(std::uint64_t x) {
+    x = ((x >> 1) & 0x5555555555555555ULL) | ((x & 0x5555555555555555ULL) << 1);
+    x = ((x >> 2) & 0x3333333333333333ULL) | ((x & 0x3333333333333333ULL) << 2);
+    x = ((x >> 4) & 0x0F0F0F0F0F0F0F0FULL) | ((x & 0x0F0F0F0F0F0F0F0FULL) << 4);
+    x = ((x >> 8) & 0x00FF00FF00FF00FFULL) | ((x & 0x00FF00FF00FF00FFULL) << 8);
+    x = ((x >> 16) & 0x0000FFFF0000FFFFULL) | ((x & 0x0000FFFF0000FFFFULL) << 16);
+    return (x >> 32) | (x << 32);
+}
 }  // namespace
 
 MCResult mc_price(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bool antithetic) {
@@ -56,6 +99,35 @@ MCResult mc_price(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bo
     for (std::uint64_t i = 0; i < n_samples; ++i) {
         const double z = normal(rng);
         stats.add(antithetic ? 0.5 * (payoff_at(z) + payoff_at(-z)) : payoff_at(z));
+    }
+    return {model.disc * stats.mean, model.disc * stats.std_error()};
+}
+
+MCResult mc_price_sobol(const Option& o, std::uint64_t n_paths, std::uint64_t seed) {
+    validate_option(o);
+
+    // Sobol points are not independent, so their own spread says nothing about the error. Instead
+    // each replication scrambles the whole sequence with a random digital shift, which makes the
+    // replications' estimates independent and unbiased, and the standard error comes from those.
+    constexpr std::uint64_t n_replications = 32;
+    const std::uint64_t n_points = n_paths / n_replications;
+    if (n_points < 1) throw std::invalid_argument("need at least 32 paths for Sobol replications");
+
+    std::mt19937_64 rng(seed);
+    const Model model(o);
+
+    RunningStats stats;
+    for (std::uint64_t rep = 0; rep < n_replications; ++rep) {
+        const std::uint64_t shift = rng();
+        double sum = 0.0;
+        for (std::uint64_t i = 0; i < n_points; ++i) {
+            // Each path has one normal draw, so only Sobol's first dimension is needed, and that is
+            // the base-2 van der Corput sequence: the bits of i reversed. Keeping 52 bits leaves
+            // room for the + 0.5 to stay exact, so u can never round to 0 or 1.
+            const double u = (((reverse_bits(i) ^ shift) >> 12) + 0.5) * 0x1p-52;
+            sum += model.payoff(model.terminal(norm_inv(u)));
+        }
+        stats.add(sum / n_points);
     }
     return {model.disc * stats.mean, model.disc * stats.std_error()};
 }
