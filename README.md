@@ -68,23 +68,24 @@ From `make bench`, for an at-the-money 1-year call (S=K=100, r=5%, σ=20%, Black
 |---:|---|---:|---:|---:|
 | 1,000 | plain | 0.3701 | 3.54% | 0.04 |
 | 1,000 | antithetic | 0.2637 | 2.52% | 0.03 |
-| 10,000 | plain | 0.1512 | 1.45% | 0.43 |
+| 10,000 | plain | 0.1512 | 1.45% | 0.40 |
 | 10,000 | antithetic | 0.1109 | 1.06% | 0.26 |
-| 100,000 | plain | 0.0483 | 0.46% | 4.6 |
-| 100,000 | antithetic | 0.0350 | 0.34% | 3.3 |
-| 1,000,000 | plain | 0.0117 | 0.11% | 44 |
-| 1,000,000 | antithetic | 0.0100 | 0.10% | 25 |
-| 10,000,000 | plain | 0.0063 | 0.06% | 430 |
-| 10,000,000 | antithetic | 0.0032 | 0.03% | 258 |
+| 100,000 | plain | 0.0483 | 0.46% | 4.1 |
+| 100,000 | antithetic | 0.0350 | 0.34% | 2.6 |
+| 1,000,000 | plain | 0.0117 | 0.11% | 41 |
+| 1,000,000 | antithetic | 0.0100 | 0.10% | 26 |
+| 10,000,000 | plain | 0.0063 | 0.06% | 403 |
+| 10,000,000 | antithetic | 0.0032 | 0.03% | 260 |
 
 - **Convergence rate:** the fitted slope of log(RMSE) against log(N) is −0.465, close to the theoretical −0.5 (error shrinks like 1/√N). The gap comes from using only 20 seeds per point.
 - **Variance reduction:** at 1M paths, antithetic variates cut the estimator's variance by 50% (standard error 0.0147 → 0.0104). Reaching the same accuracy without them would take about twice as many paths.
-- **Control variate:** at 1M paths it cuts variance by about 84% (standard error 0.0147 → 0.0059), even after spending 10% of the paths on the pilot. This figure comes from a separate Python model; `make bench` prints the measured value. Deep out of the money the underlying says little about the payoff, and the standard error can be up to about 5% worse than plain.
-- **Sobol:** at 65,536 paths the standard error is about 0.0032, around 18 times smaller than plain Monte Carlo, and it shrinks about 3.3 times for every 4 times the paths, against 2 times for random draws. These figures come from a separate Python model; `make bench` prints a measured value.
-- **Speed:** antithetic runs are also about 40% faster at the same path count, since each normal draw is used twice.
-- **Closed form:** 18.6M prices per second (about 54 ns each), single-threaded.
+- **Control variate:** at 1M paths it cuts variance by 84% (standard error 0.0147 → 0.0059), even after spending 10% of the paths on the pilot. Deep out of the money the underlying says little about the payoff, and the standard error can be up to about 5% worse than plain.
+- **Sobol:** at 2^20 (about 1M) paths the standard error is 0.00022, about 67 times smaller than plain Monte Carlo at 1M paths, and it shrinks faster than 1/√N.
+- **Speed:** antithetic runs are also about 35% faster at the same path count, since each normal draw is used twice.
+- **Parallel:** 10M antithetic paths take 260 ms on 1 thread, 130 ms on 2 (2.0x) and 78 ms on 4 (3.3x). 8 threads were no faster than 4 on this machine.
+- **Closed form:** 17.7M prices per second (about 57 ns each), single-threaded.
 
-Timings come from a single Linux machine with `-O2`; your numbers will differ.
+Timings come from one run on a GitHub Actions `ubuntu-latest` runner with g++ and `-O2`; your numbers will differ.
 
 ## Layout
 
