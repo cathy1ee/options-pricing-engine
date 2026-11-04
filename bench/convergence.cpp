@@ -48,6 +48,9 @@ int main() {
     const MCResult p = mc_price(o, 1000000, 7, false), a = mc_price(o, 1000000, 7, true);
     std::printf("Std error at 1M paths: plain %.5f, antithetic %.5f -> variance reduced %.1f%%\n", p.std_error,
                 a.std_error, 100 * (1 - (a.std_error * a.std_error) / (p.std_error * p.std_error)));
+    const MCResult c = mc_price_control_variate(o, 1000000, 7);
+    std::printf("Std error at 1M paths: plain %.5f, control variate %.5f -> variance reduced %.1f%%\n", p.std_error,
+                c.std_error, 100 * (1 - (c.std_error * c.std_error) / (p.std_error * p.std_error)));
 
     // Closed-form throughput.
     volatile double sink = 0;
