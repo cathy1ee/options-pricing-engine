@@ -386,6 +386,44 @@ int main() {
         check(throws_invalid_argument([&] { mc_price_sobol(bad, 1024, 42); }), "bad sobol", bad, 0, 0);
     }
 
+    // 20) Parallel Monte Carlo agrees with Black-Scholes within 4 standard errors, as in check 4.
+    for (const Option& o : grid) {
+        const MCResult par = mc_price_parallel(o, 200000, 42, true, 4);
+        const double bs = bs_price(o);
+        check(std::fabs(par.price - bs) < 4 * par.std_error + 1e-6, "parallel vs bs", o, par.price, bs);
+    }
+
+    // 21) Parallel results are reproducible, agree with one thread, and merge to the right standard error.
+    for (const Option& o : {Option{100, 100, 0.05, 0.20, 1, true}, Option{100, 90, 0.05, 0.25, 0.5, false},
+                            Option{100, 80, 0.0, 0.50, 2, true}}) {
+        for (bool anti : {false, true}) {
+            const double first = mc_price_parallel(o, 100000, 3, anti, 4).price;
+            const double second = mc_price_parallel(o, 100000, 3, anti, 4).price;
+            check(first == second, "parallel seed", o, first, second);
+        }
+
+        const MCResult single = mc_price(o, 200000, 7, false), par = mc_price_parallel(o, 200000, 7, false, 3);
+        const double se = std::sqrt(single.std_error * single.std_error + par.std_error * par.std_error);
+        check(std::fabs(single.price - par.price) < 4 * se, "parallel vs single", o, par.price, single.price);
+        check(std::fabs(par.std_error / single.std_error - 1.0) < 0.05, "parallel se", o, par.std_error,
+              single.std_error);
+    }
+
+    // 22) Parallel with more threads than samples, at zero volatility, and with invalid inputs.
+    {
+        const Option flat{110, 100, 0.05, 0, 1, true}, o{100, 100, 0.05, 0.20, 1, true}, bad{0, 100, 0.05, 0.20, 1, true};
+        const MCResult crowded = mc_price_parallel(o, 10, 42, false, 16);
+        check(std::isfinite(crowded.price) && std::isfinite(crowded.std_error), "parallel idle threads", o,
+              crowded.std_error, 0);
+
+        const double flat_se = mc_price_parallel(flat, 10000, 42, false, 4).std_error;
+        check(flat_se == 0.0, "parallel zero vol", flat, flat_se, 0.0);
+
+        check(throws_invalid_argument([&] { mc_price_parallel(o, 1000, 42, false, 0); }), "parallel no threads", o, 0, 0);
+        check(throws_invalid_argument([&] { mc_price_parallel(o, 1, 42, false, 4); }), "parallel too few", o, 1, 0);
+        check(throws_invalid_argument([&] { mc_price_parallel(bad, 1000, 42, false, 4); }), "bad parallel", bad, 0, 0);
+    }
+
     std::printf("%d/%d checks passed across %zu option configurations (max |analytic - FD| Greek error: %.2e)\n",
                 n_checks - n_failed, n_checks, grid.size(), max_greek_err);
     return n_failed == 0 ? 0 : 1;
