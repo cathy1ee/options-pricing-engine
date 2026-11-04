@@ -18,6 +18,7 @@ Prices European options three ways and checks each one against the others: close
 - **Black-Scholes:** `C = S·N(d1) − K·e^(−rT)·N(d2)`, where `d1 = [ln(S/K) + (r + σ²/2)T] / (σ√T)` and `d2 = d1 − σ√T`.
 - **Antithetic variates:** each draw `Z` is paired with `−Z`, and the two payoffs are averaged into one sample. The standard error is computed over these pairs, since they are the independent samples (N paths give N/2 samples).
 - **Units:** vega and rho are per 1.00 change in volatility or rate. Theta is per year.
+- **Edge cases:** `T = 0` and `σ = 0` return the discounted intrinsic value on the forward, with gamma 0 by convention. Invalid inputs (`S ≤ 0`, `K ≤ 0`, `T < 0`, `σ < 0`, NaN) and Monte Carlo runs with fewer than 2 samples throw `std::invalid_argument`.
 
 ## Build and run
 
@@ -31,7 +32,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 
 ## Validation
 
-`make test` runs 1,562 checks across 240 option configurations, and all of them pass. The grid covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
+`make test` runs 1,642 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
 
 | Check | What it verifies | Tolerance |
 |---|---|---|
@@ -39,6 +40,9 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 | Put-call parity | `C − P = S − K·e^(−rT)` on every configuration | 1e-10 |
 | Greeks | Analytic Greeks against central finite differences of the price | 1e-4 relative (max error observed: 1.35e-5) |
 | Monte Carlo | MC price (200k paths) against Black-Scholes | within 4 standard errors |
+| Limits | Prices and Greeks at `T = 0` and `σ = 0` against their closed-form limits | 1e-12 |
+| Invalid inputs | Every pricer rejects bad options, and Monte Carlo rejects too few paths | exact |
+| Low volatility | MC standard error at `σ = 0` and `σ = 1e-8` | exact at 0, 5% at 1e-8 |
 
 ## Results
 
