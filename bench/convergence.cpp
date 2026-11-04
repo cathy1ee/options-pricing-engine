@@ -51,6 +51,9 @@ int main() {
     const MCResult c = mc_price_control_variate(o, 1000000, 7);
     std::printf("Std error at 1M paths: plain %.5f, control variate %.5f -> variance reduced %.1f%%\n", p.std_error,
                 c.std_error, 100 * (1 - (c.std_error * c.std_error) / (p.std_error * p.std_error)));
+    const MCResult q = mc_price_sobol(o, 1ULL << 20, 7);
+    std::printf("Std error at 1M paths: plain %.5f, Sobol (2^20 paths) %.5f -> variance reduced %.1f%%\n", p.std_error,
+                q.std_error, 100 * (1 - (q.std_error * q.std_error) / (p.std_error * p.std_error)));
 
     // Closed-form throughput.
     volatile double sink = 0;
