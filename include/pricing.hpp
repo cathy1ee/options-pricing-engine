@@ -29,6 +29,13 @@ void validate_option(const Option& o);
 double bs_price(const Option& o);
 Greeks bs_greeks(const Option& o);
 
+// ---- Implied volatility ----
+// Returns the volatility at which bs_price matches market_price, ignoring o.sigma. A price at the
+// lower no-arbitrage bound returns 0. Throws std::invalid_argument if T = 0 or the price is outside
+// the no-arbitrage bounds. Deep out of the money the price may barely depend on volatility, so the
+// result then matches the price rather than any particular volatility.
+double implied_vol(const Option& o, double market_price);
+
 // ---- Monte Carlo ----
 struct MCResult {
     double price;
