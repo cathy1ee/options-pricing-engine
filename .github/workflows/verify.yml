@@ -1,0 +1,40 @@
+name: verify
+
+on:
+  push:
+    branches: ['bench/**']
+
+jobs:
+  injected-errors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Injected errors must fail the tests
+        run: |
+          check() {
+            sed -i "$2" "$3"
+            if git diff --quiet; then echo "NOT APPLIED: $1"; exit 1; fi
+            if make clean test > out.txt 2>&1; then echo "SURVIVED: $1"; exit 1; fi
+            if ! grep -q 'checks passed' out.txt; then cat out.txt; echo "DID NOT RUN: $1"; exit 1; fi
+            echo "CAUGHT: $1 | $(grep 'checks passed' out.txt | cut -d' ' -f1)"
+            git checkout -- "$3"
+          }
+          check 'gamma 1% too high' 's/g.gamma = div_disc/g.gamma = 1.01 * div_disc/' src/black_scholes.cpp
+          check 'plain path 2% too high' 's/: payoff_at(z));/: 1.02 * payoff_at(z));/' src/monte_carlo.cpp
+          check 'std_error 3x too large' 's/return std::sqrt(sq_dev/return 3.0 * std::sqrt(sq_dev/' src/monte_carlo.cpp
+
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Allow the sanitizer's memory layout
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Run tests under ThreadSanitizer
+        run: make test CXX=clang++ CXXFLAGS='-O1 -g -fsanitize=thread'
+
+  memory-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run tests under AddressSanitizer and UBSan
+        run: make test CXX=clang++ CXXFLAGS='-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined'
