@@ -36,6 +36,14 @@ Greeks bs_greeks(const Option& o);
 // result then matches the price rather than any particular volatility.
 double implied_vol(const Option& o, double market_price);
 
+// ---- Binomial tree ----
+enum class Exercise { European, American };
+
+// Prices an option on a Cox-Ross-Rubinstein tree with the given number of steps. Throws
+// std::invalid_argument for invalid options, for steps = 0, or when there are too few steps for
+// the up probability to lie between 0 and 1. T = 0 and sigma = 0 are valid, as for bs_price.
+double binomial_price(const Option& o, std::uint32_t steps, Exercise exercise);
+
 // ---- Monte Carlo ----
 struct MCResult {
     double price;
