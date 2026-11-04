@@ -241,6 +241,60 @@ int main() {
         check(throws_invalid_argument([&] { implied_vol(expired, 1.0); }), "iv at expiry", expired, 1.0, 0);
     }
 
+    // 12) Binomial tree: European prices approach Black-Scholes, and American prices respect their bounds.
+    for (const Option& o : grid) {
+        const double european = binomial_price(o, 500, Exercise::European), bs = bs_price(o);
+        check(std::fabs(european - bs) < 0.02, "tree vs bs", o, european, bs);
+
+        const double eu = binomial_price(o, 200, Exercise::European), am = binomial_price(o, 200, Exercise::American);
+        if (o.is_call) {
+            // Without dividends early exercise never pays for a call.
+            check(std::fabs(am - eu) < 1e-9, "american call", o, am, eu);
+        } else {
+            check(am >= eu - 1e-12, "american put >= european", o, am, eu);
+            check(am >= o.K - o.S - 1e-12, "american put >= intrinsic", o, am, o.K - o.S);
+        }
+    }
+
+    // 13) Binomial tree: convergence, Hull's American put, limits and invalid inputs.
+    {
+        const Option atm{100, 100, 0.05, 0.20, 1, true};
+        const double bs = bs_price(atm);
+        const double coarse = std::fabs(binomial_price(atm, 100, Exercise::European) - bs);
+        const double fine = std::fabs(binomial_price(atm, 1600, Exercise::European) - bs);
+        check(fine < coarse / 10, "tree convergence", atm, fine, coarse);
+
+        // Hull: S=K=50, r=10%, vol=40%, T=5 months.
+        const Option hull{50, 50, 0.10, 0.40, 0.4167, false};
+        const struct {
+            std::uint32_t steps;
+            double price;
+        } hull_values[] = {{5, 4.49}, {30, 4.263}, {50, 4.272}, {100, 4.278}, {500, 4.283}};
+        for (const auto& h : hull_values) {
+            const double am = binomial_price(hull, h.steps, Exercise::American);
+            check(std::fabs(am - h.price) < 0.002, "hull american put", hull, am, h.price);
+        }
+
+        const double pv_k = 100.0 * std::exp(-0.05);
+        const Option flat_put{90, 100, 0.05, 0, 1, false}, flat_call{110, 100, 0.05, 0, 1, true};
+        const Option expired_put{90, 100, 0.05, 0.20, 0, false};
+        const double flat_am = binomial_price(flat_put, 10, Exercise::American);
+        const double flat_eu = binomial_price(flat_put, 10, Exercise::European);
+        const double flat_call_am = binomial_price(flat_call, 10, Exercise::American);
+        const double expired_am = binomial_price(expired_put, 10, Exercise::American);
+        check(std::fabs(flat_am - 10.0) < 1e-12, "american put at zero vol", flat_put, flat_am, 10.0);
+        check(std::fabs(flat_eu - (pv_k - 90.0)) < 1e-12, "european put at zero vol", flat_put, flat_eu, pv_k - 90.0);
+        check(std::fabs(flat_call_am - (110.0 - pv_k)) < 1e-12, "american call at zero vol", flat_call, flat_call_am,
+              110.0 - pv_k);
+        check(std::fabs(expired_am - 10.0) < 1e-12, "american put at expiry", expired_put, expired_am, 10.0);
+
+        const Option bad{0, 100, 0.05, 0.20, 1, true}, low_vol{100, 100, 0.05, 0.01, 10, true};
+        check(throws_invalid_argument([&] { binomial_price(atm, 0, Exercise::European); }), "tree no steps", atm, 0, 0);
+        check(throws_invalid_argument([&] { binomial_price(bad, 10, Exercise::American); }), "bad tree", bad, 0, 0);
+        check(throws_invalid_argument([&] { binomial_price(low_vol, 1, Exercise::European); }), "tree too coarse",
+              low_vol, 0, 0);
+    }
+
     std::printf("%d/%d checks passed across %zu option configurations (max |analytic - FD| Greek error: %.2e)\n",
                 n_checks - n_failed, n_checks, grid.size(), max_greek_err);
     return n_failed == 0 ? 0 : 1;
