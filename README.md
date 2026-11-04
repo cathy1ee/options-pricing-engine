@@ -32,14 +32,15 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 
 ## Validation
 
-`make test` runs 1,642 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
+`make test` runs 1,897 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
 
 | Check | What it verifies | Tolerance |
 |---|---|---|
 | Textbook values | Hull's example: S=42, K=40, r=10%, σ=20%, T=0.5 gives a call of 4.76 and a put of 0.81 | ±0.005 |
 | Put-call parity | `C − P = S − K·e^(−rT)` on every configuration | 1e-10 |
-| Greeks | Analytic Greeks against central finite differences of the price | 1e-4 relative (max error observed: 1.35e-5) |
-| Monte Carlo | MC price (200k paths) against Black-Scholes | within 4 standard errors |
+| Greeks | Analytic Greeks against central finite differences of the price | 1e-4 relative plus 5e-6 absolute (max absolute error observed: 1.35e-5) |
+| Monte Carlo | Plain and antithetic MC prices (200k paths) against Black-Scholes | within 4 standard errors |
+| Standard error | Matches the spread of prices over 100 seeds, shrinks like 1/√N, and is smaller with antithetic variates | 25% for spread, 10% for scaling |
 | Limits | Prices and Greeks at `T = 0` and `σ = 0` against their closed-form limits | 1e-12 |
 | Invalid inputs | Every pricer rejects bad options, and Monte Carlo rejects too few paths | exact |
 | Low volatility | MC standard error at `σ = 0` and `σ = 1e-8` | exact at 0, 5% at 1e-8 |
