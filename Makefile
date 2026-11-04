@@ -1,6 +1,6 @@
 CXX      ?= g++
 CXXFLAGS ?= -O2 -Wall -Wextra
-REQUIRED := -std=c++17 -Iinclude
+REQUIRED := -std=c++17 -pthread -Iinclude
 SRC      := src/binomial.cpp src/black_scholes.cpp src/implied_vol.cpp src/monte_carlo.cpp
 
 all: test bench

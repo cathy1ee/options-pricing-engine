@@ -56,6 +56,13 @@ struct MCResult {
 // than 2 samples (n_paths < 2, or n_paths < 4 with antithetic), where a standard error is undefined.
 MCResult mc_price(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bool antithetic);
 
+// mc_price across n_threads threads, each with its own random stream. The result is reproducible
+// for a fixed seed and thread count, but differs between thread counts, and from mc_price, because
+// the streams differ. Throws std::invalid_argument for invalid options, n_threads = 0, or fewer
+// than 2 samples.
+MCResult mc_price_parallel(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bool antithetic,
+                           unsigned n_threads);
+
 // Quasi-Monte Carlo with Sobol points, which fill the distribution more evenly than random draws
 // and so converge faster than 1/sqrt(N). The paths are split into 32 independently scrambled
 // replications, and the standard error comes from the spread of their estimates. A power of 2

@@ -55,6 +55,19 @@ int main() {
     std::printf("Std error at 1M paths: plain %.5f, Sobol (2^20 paths) %.5f -> variance reduced %.1f%%\n", p.std_error,
                 q.std_error, 100 * (1 - (q.std_error * q.std_error) / (p.std_error * p.std_error)));
 
+    // Parallel scaling: time per run and speedup over one thread.
+    std::printf("\n%10s | %12s | %10s\n", "threads", "ms / run", "speedup");
+    std::printf("-----------+--------------+-----------\n");
+    double one_thread_ms = 0.0;
+    for (unsigned n_threads : {1u, 2u, 4u, 8u}) {
+        const auto start = std::chrono::steady_clock::now();
+        mc_price_parallel(o, 10000000, 7, true, n_threads);
+        const auto stop = std::chrono::steady_clock::now();
+        const double ms = std::chrono::duration<double, std::milli>(stop - start).count();
+        if (n_threads == 1) one_thread_ms = ms;
+        std::printf("%10u | %12.2f | %9.2fx\n", n_threads, ms, one_thread_ms / ms);
+    }
+
     // Closed-form throughput.
     volatile double sink = 0;
     const int n_bs = 5000000;
