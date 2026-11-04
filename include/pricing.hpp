@@ -55,3 +55,10 @@ struct MCResult {
 // rounded down to an even number. Throws std::invalid_argument for invalid options, or for fewer
 // than 2 samples (n_paths < 2, or n_paths < 4 with antithetic), where a standard error is undefined.
 MCResult mc_price(const Option& o, std::uint64_t n_paths, std::uint64_t seed, bool antithetic);
+
+// Monte Carlo with the discounted underlying as a control variate. The first 10% of the paths are a
+// pilot run that sets the coefficient and do not count towards the price, which keeps it unbiased.
+// Deep out of the money the underlying says little about the payoff, so the pilot can make the
+// standard error slightly larger than plain Monte Carlo. Throws std::invalid_argument for invalid
+// options or n_paths < 4.
+MCResult mc_price_control_variate(const Option& o, std::uint64_t n_paths, std::uint64_t seed);
