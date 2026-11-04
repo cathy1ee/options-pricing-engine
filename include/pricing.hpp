@@ -9,6 +9,7 @@ struct Option {
     double sigma;  // volatility (annual)
     double T;      // time to expiry in years
     bool is_call;
+    double q = 0.0;  // continuous dividend yield (annual)
 };
 
 struct Greeks {
@@ -19,7 +20,7 @@ struct Greeks {
     double rho;    // dV/dr          (per 1.00 change in rate)
 };
 
-// Throws std::invalid_argument unless S > 0, K > 0, sigma >= 0 and T >= 0. NaN is rejected.
+// Throws std::invalid_argument unless S > 0, K > 0, sigma >= 0, T >= 0 and q is finite. NaN is rejected.
 void validate_option(const Option& o);
 
 // ---- Closed-form Black-Scholes ----
