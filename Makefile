@@ -1,7 +1,7 @@
 CXX      ?= g++
 CXXFLAGS ?= -O2 -Wall -Wextra
 REQUIRED := -std=c++17 -Iinclude
-SRC      := src/black_scholes.cpp src/monte_carlo.cpp
+SRC      := src/black_scholes.cpp src/implied_vol.cpp src/monte_carlo.cpp
 
 all: test bench
 
