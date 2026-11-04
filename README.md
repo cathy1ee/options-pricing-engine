@@ -11,6 +11,7 @@ Prices European options three ways and checks each one against the others: close
 | `bs_price` | Closed-form Black-Scholes price for European calls and puts. |
 | `bs_greeks` | Analytic delta, gamma, vega, theta and rho. |
 | `implied_vol` | Recovers volatility from a market price, using Newton's method with the analytic vega and falling back to bisection. |
+| `mc_price_parallel` | `mc_price` across several threads, each with its own random stream. |
 | `mc_price_sobol` | Quasi-Monte Carlo pricing with scrambled Sobol points, which converges faster than random draws. |
 | `mc_price_control_variate` | Monte Carlo pricing with the discounted underlying as a control variate. |
 | `binomial_price` | European and American prices on a Cox-Ross-Rubinstein binomial tree. |
@@ -24,6 +25,7 @@ Prices European options three ways and checks each one against the others: close
 - **Antithetic variates:** each draw `Z` is paired with `−Z`, and the two payoffs are averaged into one sample. The standard error is computed over these pairs, since they are the independent samples (N paths give N/2 samples).
 - **Control variate:** each sample becomes `payoff − β(S_T − S·e^(rT))`, which keeps the mean because `E[S_T] = S·e^(rT)`. The first 10% of the paths are a pilot run that sets `β` and are not used in the price, which keeps it unbiased.
 - **Sobol points:** each path needs one normal draw, so only the first Sobol dimension is used, and draws come from an inverse normal CDF. The paths are split into 32 independently scrambled replications. Sobol points are not independent, so the standard error comes from the spread of the replications' estimates.
+- **Parallel Monte Carlo:** samples are split evenly across threads, each seeded from the main seed with SplitMix64, and the threads' results are merged in a fixed order. A seed and thread count always give the same result, but changing the thread count changes it.
 - **Units:** vega and rho are per 1.00 change in volatility or rate. Theta is per year.
 - **Edge cases:** `T = 0` and `σ = 0` return the discounted intrinsic value on the forward, with gamma 0 by convention. Invalid inputs (`S ≤ 0`, `K ≤ 0`, `T < 0`, `σ < 0`, NaN) and Monte Carlo runs with fewer than 2 samples throw `std::invalid_argument`.
 
@@ -39,7 +41,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 
 ## Validation
 
-`make test` runs 3,274 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
+`make test` runs 3,531 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
 
 | Check | What it verifies | Tolerance |
 |---|---|---|
@@ -49,6 +51,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 | Monte Carlo | Plain and antithetic MC prices (200k paths) against Black-Scholes | within 4 standard errors |
 | Control variate | MC price (200k paths) against Black-Scholes, and a standard error that matches the spread over 100 seeds and beats plain MC | within 4 standard errors, 25% for spread |
 | Sobol | MC price (65,536 paths) against Black-Scholes, and a standard error that matches the spread over 100 seeds, beats plain MC, and shrinks faster than 1/√N | within 5 standard errors, 25% for spread |
+| Parallel | MC price (200k paths, 4 threads) against Black-Scholes, repeatable for a seed, and matching a single-threaded price and standard error | within 4 standard errors, 5% on standard error |
 | Standard error | Matches the spread of prices over 100 seeds, shrinks like 1/√N, and is smaller with antithetic variates | 25% for spread, 10% for scaling |
 | Implied volatility | Pricing and inverting recovers σ on every configuration, or the price where vega is too small to pin down σ | 1e-8 on σ, or 1e-12 on price |
 | Binomial tree | European prices (500 steps) against Black-Scholes, American calls equal European calls, American puts at or above the European price and intrinsic value, and Hull's American put at 5 to 500 steps | ±0.02, 1e-9, 1e-12, ±0.002 |
@@ -98,6 +101,5 @@ Makefile
 ## Limitations and next steps
 
 - Constant volatility and no dividends. American exercise is only available on the binomial tree.
-- **Parallel Monte Carlo:** independent RNG streams per thread.
 
 Reference: Hull, J. C. *Options, Futures, and Other Derivatives.*
