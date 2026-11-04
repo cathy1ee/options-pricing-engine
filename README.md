@@ -19,11 +19,11 @@ Prices European options three ways and checks each one against the others: close
 
 ## Model
 
-- **Underlying:** geometric Brownian motion, `S_T = S·exp((r − σ²/2)T + σ√T·Z)` with `Z ~ N(0,1)`.
-- **Black-Scholes:** `C = S·N(d1) − K·e^(−rT)·N(d2)`, where `d1 = [ln(S/K) + (r + σ²/2)T] / (σ√T)` and `d2 = d1 − σ√T`.
-- **Binomial tree:** the spot moves up by `u = e^(σ√Δt)` or down by `1/u` each step, with risk-neutral up probability `p = (e^(rΔt) − 1/u) / (u − 1/u)`. American prices take the larger of holding and exercising at each node.
+- **Underlying:** geometric Brownian motion with continuous dividend yield `q`, `S_T = S·exp((r − q − σ²/2)T + σ√T·Z)` with `Z ~ N(0,1)`. Every pricer takes `q` from `Option`, where it defaults to 0.
+- **Black-Scholes:** `C = S·e^(−qT)·N(d1) − K·e^(−rT)·N(d2)`, where `d1 = [ln(S/K) + (r − q + σ²/2)T] / (σ√T)` and `d2 = d1 − σ√T`.
+- **Binomial tree:** the spot moves up by `u = e^(σ√Δt)` or down by `1/u` each step, with risk-neutral up probability `p = (e^((r−q)Δt) − 1/u) / (u − 1/u)`. American prices take the larger of holding and exercising at each node.
 - **Antithetic variates:** each draw `Z` is paired with `−Z`, and the two payoffs are averaged into one sample. The standard error is computed over these pairs, since they are the independent samples (N paths give N/2 samples).
-- **Control variate:** each sample becomes `payoff − β(S_T − S·e^(rT))`, which keeps the mean because `E[S_T] = S·e^(rT)`. The first 10% of the paths are a pilot run that sets `β` and are not used in the price, which keeps it unbiased.
+- **Control variate:** each sample becomes `payoff − β(S_T − S·e^((r−q)T))`, which keeps the mean because `E[S_T] = S·e^((r−q)T)`. The first 10% of the paths are a pilot run that sets `β` and are not used in the price, which keeps it unbiased.
 - **Sobol points:** each path needs one normal draw, so only the first Sobol dimension is used, and draws come from an inverse normal CDF. The paths are split into 32 independently scrambled replications. Sobol points are not independent, so the standard error comes from the spread of the replications' estimates.
 - **Parallel Monte Carlo:** samples are split evenly across threads, each seeded from the main seed with SplitMix64, and the threads' results are merged in a fixed order. A seed and thread count always give the same result, but changing the thread count changes it.
 - **Units:** vega and rho are per 1.00 change in volatility or rate. Theta is per year.
@@ -41,12 +41,13 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 
 ## Validation
 
-`make test` runs 3,531 checks, and all of them pass. Most run across a grid of 240 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, and both calls and puts.
+`make test` runs 7,258 checks, and all of them pass. Most run across a grid of 480 option configurations, which covers strikes from 80 to 120 (in, at and out of the money), volatilities of 10%, 25% and 50%, expiries from 0.1 to 2 years, rates of 0% and 5%, dividend yields of 0% and 3%, and both calls and puts.
 
 | Check | What it verifies | Tolerance |
 |---|---|---|
 | Textbook values | Hull's example: S=42, K=40, r=10%, σ=20%, T=0.5 gives a call of 4.76 and a put of 0.81 | ±0.005 |
-| Put-call parity | `C − P = S − K·e^(−rT)` on every configuration | 1e-10 |
+| Put-call parity | `C − P = S·e^(−qT) − K·e^(−rT)` on every configuration | 1e-10 |
+| Dividends | A yield matches a lower spot with no dividends, American calls can beat European calls, and the zero-volatility exercise time matches a brute-force search | 1e-10, 1e-6 |
 | Greeks | Analytic Greeks against central finite differences of the price | 1e-4 relative plus 5e-6 absolute (max absolute error observed: 1.35e-5) |
 | Monte Carlo | Plain and antithetic MC prices (200k paths) against Black-Scholes | within 4 standard errors |
 | Control variate | MC price (200k paths) against Black-Scholes, and a standard error that matches the spread over 100 seeds and beats plain MC | within 4 standard errors, 25% for spread |
@@ -54,7 +55,7 @@ Requires g++ or clang++ with C++17. The build uses `-Wall -Wextra` and produces 
 | Parallel | MC price (200k paths, 4 threads) against Black-Scholes, repeatable for a seed, and matching a single-threaded price and standard error | within 4 standard errors, 5% on standard error |
 | Standard error | Matches the spread of prices over 100 seeds, shrinks like 1/√N, and is smaller with antithetic variates | 25% for spread, 10% for scaling |
 | Implied volatility | Pricing and inverting recovers σ on every configuration, or the price where vega is too small to pin down σ | 1e-8 on σ, or 1e-12 on price |
-| Binomial tree | European prices (500 steps) against Black-Scholes, American calls equal European calls, American puts at or above the European price and intrinsic value, and Hull's American put at 5 to 500 steps | ±0.02, 1e-9, 1e-12, ±0.002 |
+| Binomial tree | European prices (500 steps) against Black-Scholes, American calls equal European calls without dividends, American prices at or above the European price and intrinsic value, and Hull's American put at 5 to 500 steps | ±0.02, 1e-9, 1e-12, ±0.002 |
 | Limits | Prices and Greeks at `T = 0` and `σ = 0` against their closed-form limits | 1e-12 |
 | Invalid inputs | Every pricer rejects bad options, and Monte Carlo rejects too few paths | exact |
 | Low volatility | MC standard error at `σ = 0` and `σ = 1e-8` | exact at 0, 5% at 1e-8 |
@@ -100,6 +101,6 @@ Makefile
 
 ## Limitations and next steps
 
-- Constant volatility and no dividends. American exercise is only available on the binomial tree.
+- Constant volatility, and dividends only as a continuous yield. American exercise is only available on the binomial tree.
 
 Reference: Hull, J. C. *Options, Futures, and Other Derivatives.*
